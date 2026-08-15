@@ -15,6 +15,19 @@ let pendingPostImageFile = null;
 let pendingPostVideoFile = null;
 let toastTimer = null;
 
+const ICONS = {
+  home: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7"/><path d="M9 22V12h6v10"/><path d="M5 10v11a1 1 0 001 1h3m6 0h3a1 1 0 001-1V10"/></svg>`,
+  gallery: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`,
+  friends: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
+  classmates: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg>`,
+  inbox: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>`,
+  edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
+};
+
+function sectionBanner(title){
+  return `<div class="section-banner"><div class="crest-sm"></div><span class="section-banner-title">${title}</span></div>`;
+}
+
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function initials(name){ return (name||'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 function timeAgo(ts){
@@ -140,12 +153,12 @@ function renderApp(){
         <span class="edit-link" id="edit-profile-link">Edit profile</span>
       </div>
       <div class="card" style="padding:8px;">
-        <button class="nav-btn ${VIEW==='feed'?'active':''}" data-view="feed">🏠 Home</button>
-        <button class="nav-btn ${VIEW==='gallery'?'active':''}" data-view="gallery">🖼️ Gallery</button>
-        <button class="nav-btn ${VIEW==='friends'?'active':''}" data-view="friends">🤝 Friends</button>
-        <button class="nav-btn ${VIEW==='classmates'?'active':''}" data-view="classmates">🎓 Classmates</button>
-        <button class="nav-btn ${VIEW==='inbox'?'active':''}" data-view="inbox">✉️ Inbox${unreadTotal()?` <span class="nav-badge">${unreadTotal()}</span>`:''}</button>
-        ${VIEW==='profile' ? `<button class="nav-btn active" data-view="profile">✏️ Edit profile</button>`:''}
+        <button class="nav-btn ${VIEW==='feed'?'active':''}" data-view="feed">${ICONS.home}<span>Home</span></button>
+        <button class="nav-btn ${VIEW==='gallery'?'active':''}" data-view="gallery">${ICONS.gallery}<span>Gallery</span></button>
+        <button class="nav-btn ${VIEW==='friends'?'active':''}" data-view="friends">${ICONS.friends}<span>Friends</span></button>
+        <button class="nav-btn ${VIEW==='classmates'?'active':''}" data-view="classmates">${ICONS.classmates}<span>Classmates</span></button>
+        <button class="nav-btn ${VIEW==='inbox'?'active':''}" data-view="inbox">${ICONS.inbox}<span>Inbox</span>${unreadTotal()?` <span class="nav-badge">${unreadTotal()}</span>`:''}</button>
+        ${VIEW==='profile' ? `<button class="nav-btn active" data-view="profile">${ICONS.edit}<span>Edit profile</span></button>`:''}
       </div>
     </div>
     <div class="side-main">
@@ -162,6 +175,7 @@ function unreadTotal(){ return CONVERSATIONS.reduce((sum,c) => sum + (c.unread||
 function renderFeed(){
   const posts = POSTS;
   return `
+    ${sectionBanner('Home')}
     <div class="card composer">
       <div class="pin"></div>
       <textarea id="post-text" placeholder="What's on your mind, ${escapeHtml(ME.name.split(' ')[0])}?"></textarea>
@@ -218,6 +232,7 @@ function renderPost(p){
 function renderRoster(){
   const others = Object.keys(USERS).filter(u=>u!==ME.username);
   return `
+  ${sectionBanner('Classmates')}
   <div class="card">
     <div class="pin"></div>
     <div class="roster-title">Whole class (${Object.keys(USERS).length})</div>
@@ -271,6 +286,7 @@ function renderRosterMini(){
 
 function renderEditProfile(){
   return `
+  ${sectionBanner('Edit Profile')}
   <div class="card">
     <div class="pin"></div>
     <div class="avatar-pick">
@@ -290,6 +306,7 @@ function renderGallery(){
     if(p.video) media.push({ type:'video', src:p.video, author:p.author, timestamp:p.timestamp });
   });
   return `
+  ${sectionBanner('Gallery')}
   <div class="card">
     <div class="pin"></div>
     <div class="roster-title">Photos &amp; videos (${media.length})</div>
@@ -307,6 +324,7 @@ function renderGallery(){
 function renderFriends(){
   const friends = Object.keys(USERS).filter(u => u!==ME.username && connectionStatus(u)==='connected');
   return `
+  ${sectionBanner('Friends')}
   <div class="card">
     <div class="pin"></div>
     <div class="roster-title">Your friends (${friends.length})</div>
@@ -347,6 +365,7 @@ function renderInbox(){
     </div>`;
   }
   return `
+  ${sectionBanner('Inbox')}
   <div class="card">
     <div class="pin"></div>
     <div class="roster-title">Messages</div>
