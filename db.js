@@ -11,7 +11,16 @@ function endpoint() {
 
 async function readDb() {
   const res = await fetch(endpoint());
-  const data = await res.json();
+  const raw = await res.text();
+  if (!res.ok) {
+    throw new Error(`Firebase read failed (status ${res.status}): ${raw.slice(0, 300)}`);
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`Firebase returned non-JSON (status ${res.status}): ${raw.slice(0, 300)}`);
+  }
   if (data && data.error) throw new Error('Firebase error: ' + data.error);
   if (!data) return JSON.parse(JSON.stringify(EMPTY_DB));
   if (!data.users) data.users = {};
@@ -27,7 +36,12 @@ async function writeDb(data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  const result = await res.json();
+  const raw = await res.text();
+  if (!res.ok) {
+    throw new Error(`Firebase write failed (status ${res.status}): ${raw.slice(0, 300)}`);
+  }
+  let result;
+  try { result = JSON.parse(raw); } catch (e) { result = null; }
   if (result && result.error) throw new Error('Firebase error: ' + result.error);
 }
 
