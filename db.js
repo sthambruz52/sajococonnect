@@ -1,39 +1,34 @@
-const BIN_ID = process.env.JSONBIN_BIN_ID;
-const MASTER_KEY = process.env.JSONBIN_MASTER_KEY;
-const BASE = 'https://api.jsonbin.io/v3/b';
+const DB_URL = process.env.FIREBASE_DB_URL; // e.g. https://your-project-default-rtdb.region.firebasedatabase.app
 
 const EMPTY_DB = { users: {}, posts: [], connections: { edges: [], requests: [] }, messages: [] };
 
-function checkConfig() {
-  if (!BIN_ID || !MASTER_KEY) {
-    throw new Error('JSONBIN_BIN_ID / JSONBIN_MASTER_KEY are not set - add them as environment variables.');
+function endpoint() {
+  if (!DB_URL) {
+    throw new Error('FIREBASE_DB_URL is not set - add it as an environment variable.');
   }
+  return `${DB_URL.replace(/\/$/, '')}/sajoco-db.json`;
 }
 
 async function readDb() {
-  checkConfig();
-  const res = await fetch(`${BASE}/${BIN_ID}/latest`, {
-    headers: { 'X-Master-Key': MASTER_KEY }
-  });
+  const res = await fetch(endpoint());
   const data = await res.json();
-  if (!res.ok) throw new Error('JSONBin error: ' + (data.message || res.status));
-  const record = data.record || {};
-  if (!record.users) record.users = {};
-  if (!record.posts) record.posts = [];
-  if (!record.messages) record.messages = [];
-  if (!record.connections) record.connections = { edges: [], requests: [] };
-  return record;
+  if (data && data.error) throw new Error('Firebase error: ' + data.error);
+  if (!data) return JSON.parse(JSON.stringify(EMPTY_DB));
+  if (!data.users) data.users = {};
+  if (!data.posts) data.posts = [];
+  if (!data.messages) data.messages = [];
+  if (!data.connections) data.connections = { edges: [], requests: [] };
+  return data;
 }
 
 async function writeDb(data) {
-  checkConfig();
-  const res = await fetch(`${BASE}/${BIN_ID}`, {
+  const res = await fetch(endpoint(), {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': MASTER_KEY },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
   const result = await res.json();
-  if (!res.ok) throw new Error('JSONBin error: ' + (result.message || res.status));
+  if (result && result.error) throw new Error('Firebase error: ' + result.error);
 }
 
 module.exports = { readDb, writeDb };
