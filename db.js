@@ -27,6 +27,14 @@ async function readDb() {
   if (!data.posts) data.posts = [];
   if (!data.messages) data.messages = [];
   if (!data.connections) data.connections = { edges: [], requests: [] };
+  if (!data.connections.edges) data.connections.edges = [];
+  if (!data.connections.requests) data.connections.requests = [];
+  // Firebase silently drops empty arrays/objects when saving - restore them here
+  data.posts = data.posts.map(p => ({
+    ...p,
+    likes: p.likes || [],
+    comments: p.comments || []
+  }));
   return data;
 }
 
