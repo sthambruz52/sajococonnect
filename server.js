@@ -1,60 +1,24 @@
+
 const express = require('express');
-const mongoose = require('mongoose');
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const cors = require('cors');
+require('dotenv').config();
+const { readDb, writeDb } = require('./db.js');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const JWT_SECRET = process.env.JWT_SECRET || 'sajoco-92-secret-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'sajoco-92-secret';
 
-app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if(!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadDir));
-
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) console.warn('MONGODB_URI not set - using memory fallback');
-else mongoose.connect(MONGODB_URI).then(()=>console.log('MongoDB connected')).catch(e=>console.log('Mongo error', e.message));
-
-const ReplySchema = new mongoose.Schema({
-  author: String,
-  text: String,
-  likes: [String],
-  createdAt: { type: Date, default: Date.now }
-});
-const CommentSchema = new mongoose.Schema({
-  author: String,
-  text: String,
-  likes: [String],
-  replies: [ReplySchema],
-  createdAt: { type: Date, default: Date.now }
-});
-const PostSchema = new mongoose.Schema({
-  author: String,
-  text: String,
-  imageUrl: String,
-  videoLink: String,
-  likes: [String],
-  comments: [CommentSchema],
-  createdAt: { type: Date, default: Date.now }
-});
-const UserSchema = new mongoose.Schema({
-  username: { type: String, unique: true },
-  password: String,
-  avatar: String,
-  joinedAt: { type: Date, default: Date.now }
-});
-
-const User = mongoose.model('User', UserSchema);
-const Post = mongoose.model('Post', PostSchema);
 
 const storage = multer.diskStorage({
   destination: (req,file,cb)=>cb(null, uploadDir),
@@ -69,118 +33,135 @@ function auth(req,res,next){
   try{ req.user=jwt.verify(token, JWT_SECRET); next(); }catch(e){ return res.status(401).json({error:'Invalid token'}); }
 }
 
-app.post('/api/register', async (req,res)=>{
+app.post('/api/register', (req,res)=>{
   const { username, password } = req.body;
-  if(!username||!password) return res.status(400).json({error:'Required'});
-  const exists = await User.findOne({username});
-  if(exists) return res.status(400).json({error:'Username taken'});
-  const hashed = await bcrypt.hash(password,10);
-  const user = await User.create({ username, password: hashed });
-  const token = jwt.sign({username}, JWT_SECRET);
-  res.json({ token, username: user.username });
-});
-app.post('/api/login', async (req,res)=>{
-  const { username, password } = req.body;
-  const user = await User.findOne({username});
-  if(!user) return res.status(400).json({error:'User not found'});
-  const ok = await bcrypt.compare(password, user.password);
-  if(!ok) return res.status(400).json({error:'Wrong password'});
+  const db = readDb();
+  if(db.users.find(u=>u.username===username)) return res.status(400).json({error:'Taken'});
+  const hashed = bcrypt.hashSync(password, 8);
+  db.users.push({ username, password: hashed });
+  writeDb(db);
   const token = jwt.sign({username}, JWT_SECRET);
   res.json({ token, username });
 });
-app.get('/api/users', async (req,res)=>{
-  const users = await User.find().select('username avatar joinedAt').sort({joinedAt:-1}).limit(20);
-  res.json(users);
+app.post('/api/login', (req,res)=>{
+  const { username, password } = req.body;
+  const db = readDb();
+  const u = db.users.find(x=>x.username===username);
+  if(!u) return res.status(400).json({error:'Not found'});
+  if(!bcrypt.compareSync(password, u.password)) return res.status(400).json({error:'Wrong pass'});
+  const token = jwt.sign({username}, JWT_SECRET);
+  res.json({ token, username });
 });
-app.get('/api/posts', async (req,res)=>{
-  const posts = await Post.find().sort({createdAt:-1});
-  res.json(posts);
+app.get('/api/users', (req,res)=>{
+  const db = readDb();
+  res.json(db.users.map(u=>({username:u.username})));
 });
-app.post('/api/posts', auth, upload.single('image'), async (req,res)=>{
+app.get('/api/posts', (req,res)=>{
+  const db = readDb();
+  res.json(db.posts.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)));
+});
+app.post('/api/posts', auth, upload.single('image'), (req,res)=>{
+  const db = readDb();
   const { text, videoLink } = req.body;
   let imageUrl=null;
   if(req.file) imageUrl='/uploads/'+req.file.filename;
-  const post = await Post.create({ author: req.user.username, text, imageUrl, videoLink, likes:[], comments:[] });
-  res.json(post);
+  const post = { _id: Date.now().toString(), author: req.user.username, text: text||'', imageUrl, videoLink: videoLink||'', likes:[], comments:[], createdAt: new Date().toISOString() };
+  db.posts.push(post); writeDb(db); res.json(post);
 });
-app.put('/api/posts/:id', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.id);
-  if(!post) return res.status(404).json({error:'Not found'});
-  if(post.author!==req.user.username) return res.status(403).json({error:'Not owner'});
-  post.text=req.body.text; await post.save(); res.json(post);
+app.put('/api/posts/:id', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.id);
+  if(!p) return res.status(404).json({error:'Not found'});
+  if(p.author!==req.user.username) return res.status(403).json({error:'No'});
+  p.text = req.body.text; writeDb(db); res.json(p);
 });
-app.delete('/api/posts/:id', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.id);
-  if(!post) return res.status(404).json({error:'Not found'});
-  if(post.author!==req.user.username) return res.status(403).json({error:'Not owner'});
-  await post.deleteOne(); res.json({ok:true});
+app.delete('/api/posts/:id', auth, (req,res)=>{
+  let db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.id);
+  if(!p) return res.status(404).json({error:'Not found'});
+  if(p.author!==req.user.username) return res.status(403).json({error:'No'});
+  db.posts = db.posts.filter(x=>x._id!==req.params.id); writeDb(db); res.json({ok:true});
 });
-app.post('/api/posts/:id/like', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.id);
-  if(!post) return res.status(404).json({error:'Not found'});
-  const i=post.likes.indexOf(req.user.username);
-  if(i===-1) post.likes.push(req.user.username); else post.likes.splice(i,1);
-  await post.save(); res.json(post);
+app.post('/api/posts/:id/like', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.id);
+  if(!p) return res.status(404).json({error:'Not found'});
+  if(!p.likes) p.likes=[];
+  const i = p.likes.indexOf(req.user.username);
+  if(i===-1) p.likes.push(req.user.username); else p.likes.splice(i,1);
+  writeDb(db); res.json(p);
 });
-app.post('/api/posts/:id/comments', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.id);
-  if(!post) return res.status(404).json({error:'Not found'});
-  post.comments.push({ author:req.user.username, text:req.body.text, likes:[], replies:[] });
-  await post.save(); res.json(post);
+app.post('/api/posts/:id/comments', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.id);
+  if(!p) return res.status(404).json({error:'Not found'});
+  const c = { _id: Date.now().toString(), author: req.user.username, text: req.body.text, likes:[], replies:[], createdAt: new Date().toISOString() };
+  p.comments.push(c); writeDb(db); res.json(p);
 });
-app.put('/api/posts/:postId/comments/:commentId', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const c=post?.comments.id(req.params.commentId);
+app.put('/api/posts/:postId/comments/:commentId', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  const c = p?.comments.find(x=>x._id===req.params.commentId);
   if(!c) return res.status(404).json({error:'Not found'});
-  if(c.author!==req.user.username) return res.status(403).json({error:'Not owner'});
-  c.text=req.body.text; await post.save(); res.json(post);
+  if(c.author!==req.user.username) return res.status(403).json({error:'No'});
+  c.text = req.body.text; writeDb(db); res.json(p);
 });
-app.delete('/api/posts/:postId/comments/:commentId', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const c=post?.comments.id(req.params.commentId);
+app.delete('/api/posts/:postId/comments/:commentId', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  if(!p) return res.status(404).json({error:'Not found'});
+  const c = p.comments.find(x=>x._id===req.params.commentId);
   if(!c) return res.status(404).json({error:'Not found'});
-  if(c.author!==req.user.username && post.author!==req.user.username) return res.status(403).json({error:'Not allowed'});
-  c.deleteOne(); await post.save(); res.json(post);
+  if(c.author!==req.user.username && p.author!==req.user.username) return res.status(403).json({error:'No'});
+  p.comments = p.comments.filter(x=>x._id!==req.params.commentId); writeDb(db); res.json(p);
 });
-app.post('/api/posts/:postId/comments/:commentId/like', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const c=post?.comments.id(req.params.commentId);
+app.post('/api/posts/:postId/comments/:commentId/like', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  const c = p?.comments.find(x=>x._id===req.params.commentId);
   if(!c) return res.status(404).json({error:'Not found'});
-  const i=c.likes.indexOf(req.user.username);
+  if(!c.likes) c.likes=[];
+  const i = c.likes.indexOf(req.user.username);
   if(i===-1) c.likes.push(req.user.username); else c.likes.splice(i,1);
-  await post.save(); res.json(post);
+  writeDb(db); res.json(p);
 });
-app.post('/api/posts/:postId/comments/:commentId/replies', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const c=post?.comments.id(req.params.commentId);
+app.post('/api/posts/:postId/comments/:commentId/replies', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  const c = p?.comments.find(x=>x._id===req.params.commentId);
   if(!c) return res.status(404).json({error:'Not found'});
-  c.replies.push({ author:req.user.username, text:req.body.text, likes:[] });
-  await post.save(); res.json(post);
+  const r = { _id: Date.now().toString(), author: req.user.username, text: req.body.text, likes:[], createdAt: new Date().toISOString() };
+  if(!c.replies) c.replies=[];
+  c.replies.push(r); writeDb(db); res.json(p);
 });
-app.post('/api/posts/:postId/comments/:commentId/replies/:replyId/like', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const r=post?.comments.id(req.params.commentId)?.replies.id(req.params.replyId);
-  if(!r) return res.status(404).json({error:'Reply not found'});
-  const i=r.likes.indexOf(req.user.username);
+app.post('/api/posts/:postId/comments/:commentId/replies/:replyId/like', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  const c = p?.comments.find(x=>x._id===req.params.commentId);
+  const r = c?.replies.find(x=>x._id===req.params.replyId);
+  if(!r) return res.status(404).json({error:'Not found'});
+  if(!r.likes) r.likes=[];
+  const i = r.likes.indexOf(req.user.username);
   if(i===-1) r.likes.push(req.user.username); else r.likes.splice(i,1);
-  await post.save(); res.json(post);
+  writeDb(db); res.json(p);
 });
-app.put('/api/posts/:postId/comments/:commentId/replies/:replyId', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const r=post?.comments.id(req.params.commentId)?.replies.id(req.params.replyId);
+app.put('/api/posts/:postId/comments/:commentId/replies/:replyId', auth, (req,res)=>{
+  const db = readDb();
+  const r = db.posts.find(x=>x._id===req.params.postId)?.comments.find(x=>x._id===req.params.commentId)?.replies.find(x=>x._id===req.params.replyId);
   if(!r) return res.status(404).json({error:'Not found'});
-  if(r.author!==req.user.username) return res.status(403).json({error:'Not owner'});
-  r.text=req.body.text; await post.save(); res.json(post);
+  if(r.author!==req.user.username) return res.status(403).json({error:'No'});
+  r.text = req.body.text; writeDb(db); res.json(db.posts.find(x=>x._id===req.params.postId));
 });
-app.delete('/api/posts/:postId/comments/:commentId/replies/:replyId', auth, async (req,res)=>{
-  const post=await Post.findById(req.params.postId);
-  const c=post?.comments.id(req.params.commentId);
-  const r=c?.replies.id(req.params.replyId);
+app.delete('/api/posts/:postId/comments/:commentId/replies/:replyId', auth, (req,res)=>{
+  const db = readDb();
+  const p = db.posts.find(x=>x._id===req.params.postId);
+  const c = p?.comments.find(x=>x._id===req.params.commentId);
+  if(!c) return res.status(404).json({error:'Not found'});
+  const r = c.replies.find(x=>x._id===req.params.replyId);
   if(!r) return res.status(404).json({error:'Not found'});
-  if(r.author!==req.user.username && c.author!==req.user.username && post.author!==req.user.username) return res.status(403).json({error:'Not allowed'});
-  r.deleteOne(); await post.save(); res.json(post);
+  if(r.author!==req.user.username && c.author!==req.user.username && p.author!==req.user.username) return res.status(403).json({error:'No'});
+  c.replies = c.replies.filter(x=>x._id!==req.params.replyId); writeDb(db); res.json(p);
 });
 
 app.get('*', (req,res)=> res.sendFile(path.join(__dirname,'public','index.html')));
-
-app.listen(PORT, ()=>console.log('SAJOCO 92 Beautiful Theme running on '+PORT));
+app.listen(PORT, ()=>console.log('SAJOCO 92 fixed running '+PORT));
