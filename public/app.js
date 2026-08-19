@@ -8,6 +8,11 @@ let CONVERSATIONS = [];
 let INBOX_THREAD = null; // username of open thread, or null for list view
 let THREAD_MESSAGES = [];
 let VIEW = 'feed';
+let PROFILE_TARGET = null;
+let EDITING_POST_ID = null;
+let EDIT_REMOVE_IMAGE = false;
+let EDIT_REMOVE_VIDEO = false;
+let replyContext = null; // { postId, commentId, authorName }
 let authTab = 'login';
 let authError = '';
 let pendingAvatarFile = null;
@@ -162,7 +167,7 @@ function renderApp(){
       </div>
     </div>
     <div class="side-main">
-      ${VIEW==='feed' ? renderFeed() : VIEW==='gallery' ? renderGallery() : VIEW==='classmates' ? renderRoster() : VIEW==='friends' ? renderFriends() : VIEW==='inbox' ? renderInbox() : renderEditProfile()}
+      ${VIEW==='feed' ? renderFeed() : VIEW==='gallery' ? renderGallery() : VIEW==='classmates' ? renderRoster() : VIEW==='friends' ? renderFriends() : VIEW==='inbox' ? renderInbox() : VIEW==='viewProfile' ? renderViewProfile() : renderEditProfile()}
     </div>
     <div class="side-right">
       ${renderRosterMini()}
@@ -196,18 +201,50 @@ function renderFeed(){
 }
 
 function renderPost(p){
-  const liked = p.likes.includes(ME.username);
+  const mine = p.author === ME.username;
   const author = p.authorInfo || USERS[p.author];
+
+  if(EDITING_POST_ID === p.id){
+    return `
+    <div class="card post" data-id="${p.id}">
+      <div class="pin"></div>
+      <div class="post-head">
+        ${avatarHtml(p.author, 38)}
+        <div>
+          <div class="post-author">${escapeHtml(author ? author.name : p.author)}</div>
+          <div class="post-time mono">Editing…</div>
+        </div>
+      </div>
+      <textarea class="edit-post-textarea" id="edit-post-text">${escapeHtml(p.content||'')}</textarea>
+      <div class="post-media">
+        ${p.image && !EDIT_REMOVE_IMAGE ? `<div class="media-remove-wrap"><img src="${p.image}"><button class="media-remove-btn" data-action="mark-remove-image">Remove photo</button></div>` : ''}
+        ${p.video && !EDIT_REMOVE_VIDEO ? `<div class="media-remove-wrap"><video src="${p.video}" controls></video><button class="media-remove-btn" data-action="mark-remove-video">Remove video</button></div>` : ''}
+      </div>
+      <div class="composer-row">
+        <button class="roster-btn" data-action="cancel-edit">Cancel</button>
+        <button class="post-btn" data-action="save-edit" data-id="${p.id}">Save changes</button>
+      </div>
+    </div>`;
+  }
+
+  const liked = p.likes.includes(ME.username);
   const embed = p.videoUrl ? youtubeEmbed(p.videoUrl) : null;
   return `
   <div class="card post" data-id="${p.id}">
     <div class="pin"></div>
     <div class="post-head">
-      ${avatarHtml(p.author, 38)}
-      <div>
-        <div class="post-author">${escapeHtml(author ? author.name : p.author)}</div>
-        <div class="post-time mono">${timeAgo(p.timestamp)}</div>
+      <div class="post-head-link" data-action="view-profile" data-user="${p.author}" style="display:flex;gap:10px;align-items:center;cursor:pointer;">
+        ${avatarHtml(p.author, 38)}
+        <div>
+          <div class="post-author">${escapeHtml(author ? author.name : p.author)}</div>
+          <div class="post-time mono">${timeAgo(p.timestamp)}</div>
+        </div>
       </div>
+      ${mine ? `
+        <div class="post-owner-actions">
+          <button data-action="edit-post" data-id="${p.id}" title="Edit">${ICONS.edit}</button>
+          <button data-action="delete-post" data-id="${p.id}" title="Delete">✕</button>
+        </div>` : ''}
     </div>
     ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
     <div class="post-media">
@@ -220,13 +257,29 @@ function renderPost(p){
       <button class="comment-btn" data-action="focus-comment" data-id="${p.id}">💬 ${p.comments.length ? p.comments.length+' ' : ''}Comment</button>
     </div>
     <div class="comments">
-      ${p.comments.map(c => `<div class="comment"><b>${escapeHtml((USERS[c.author]&&USERS[c.author].name)||c.author)}</b> ${escapeHtml(c.text)}</div>`).join('')}
+      ${renderCommentThread(p)}
     </div>
+    ${replyContext && replyContext.postId===p.id ? `<div class="reply-indicator">Replying to ${escapeHtml(replyContext.authorName)} <span data-action="cancel-reply">✕ cancel</span></div>` : ''}
     <div class="comment-input-row">
       <input placeholder="Write a comment…" data-comment-input="${p.id}">
       <button class="send-btn" data-action="comment" data-id="${p.id}">Send</button>
     </div>
   </div>`;
+}
+
+function renderCommentThread(p){
+  const top = p.comments.filter(c => !c.replyTo);
+  const repliesOf = id => p.comments.filter(c => c.replyTo === id);
+  const renderOne = (c, isReply) => {
+    const name = escapeHtml((USERS[c.author]&&USERS[c.author].name)||c.author);
+    return `
+    <div class="comment${isReply?' comment-reply':''}">
+      <div><b>${name}</b> ${escapeHtml(c.text)}</div>
+      <button class="reply-link" data-action="reply-comment" data-post="${p.id}" data-comment="${c.id}" data-author="${name}">Reply</button>
+    </div>
+    ${repliesOf(c.id).map(r => renderOne(r, true)).join('')}`;
+  };
+  return top.map(c => renderOne(c, false)).join('');
 }
 
 function renderRoster(){
@@ -250,10 +303,12 @@ function renderRosterItem(u){
   else btn = `<button class="roster-btn" data-action="connect" data-user="${u}">Connect</button>`;
   return `
   <div class="roster-item">
-    ${avatarHtml(u,32)}
-    <div>
-      <div class="roster-name">${escapeHtml(user.name)}</div>
-      <div class="post-time mono">${escapeHtml(user.bio||'')}</div>
+    <div class="roster-item-link" data-action="view-profile" data-user="${u}" style="display:flex;gap:10px;align-items:center;flex:1;cursor:pointer;">
+      ${avatarHtml(u,32)}
+      <div>
+        <div class="roster-name">${escapeHtml(user.name)}</div>
+        <div class="post-time mono">${escapeHtml(user.bio||'')}</div>
+      </div>
     </div>
     ${btn}
   </div>`;
@@ -302,8 +357,8 @@ function renderEditProfile(){
 function renderGallery(){
   const media = [];
   [...POSTS].sort((a,b)=>b.timestamp-a.timestamp).forEach(p => {
-    if(p.image) media.push({ type:'image', src:p.image, author:p.author, timestamp:p.timestamp });
-    if(p.video) media.push({ type:'video', src:p.video, author:p.author, timestamp:p.timestamp });
+    if(p.image) media.push({ type:'image', src:p.image, author:p.author, timestamp:p.timestamp, postId:p.id });
+    if(p.video) media.push({ type:'video', src:p.video, author:p.author, timestamp:p.timestamp, postId:p.id });
   });
   return `
   ${sectionBanner('Gallery')}
@@ -313,9 +368,12 @@ function renderGallery(){
     ${media.length===0 ? `<div class="empty">No photos or videos posted yet.</div>` : `
       <div class="gallery-grid">
         ${media.map(m => `
-          <a class="gallery-tile" href="${m.src}" target="_blank" rel="noopener" title="${escapeHtml((USERS[m.author]&&USERS[m.author].name)||m.author)} · ${timeAgo(m.timestamp)}">
-            ${m.type==='image' ? `<img src="${m.src}">` : `<video src="${m.src}"></video><span class="gallery-play">▶</span>`}
-          </a>`).join('')}
+          <div class="gallery-tile-wrap">
+            <a class="gallery-tile" href="${m.src}" target="_blank" rel="noopener" title="${escapeHtml((USERS[m.author]&&USERS[m.author].name)||m.author)} · ${timeAgo(m.timestamp)}">
+              ${m.type==='image' ? `<img src="${m.src}">` : `<video src="${m.src}"></video><span class="gallery-play">▶</span>`}
+            </a>
+            ${m.author===ME.username ? `<button class="gallery-delete" data-action="delete-media" data-post="${m.postId}" data-type="${m.type}" title="Delete">✕</button>` : ''}
+          </div>`).join('')}
       </div>
     `}
   </div>`;
@@ -330,13 +388,41 @@ function renderFriends(){
     <div class="roster-title">Your friends (${friends.length})</div>
     ${friends.length===0 ? `<div class="empty">No connections yet — head to Classmates to send requests.</div>` : friends.map(u => `
       <div class="roster-item">
-        ${avatarHtml(u,32)}
-        <div>
-          <div class="roster-name">${escapeHtml(USERS[u].name)}</div>
-          <div class="post-time mono">${escapeHtml(USERS[u].bio||'')}</div>
+        <div class="roster-item-link" data-action="view-profile" data-user="${u}" style="display:flex;gap:10px;align-items:center;flex:1;cursor:pointer;">
+          ${avatarHtml(u,32)}
+          <div>
+            <div class="roster-name">${escapeHtml(USERS[u].name)}</div>
+            <div class="post-time mono">${escapeHtml(USERS[u].bio||'')}</div>
+          </div>
         </div>
         <button class="roster-btn" data-action="message" data-user="${u}">Message</button>
       </div>`).join('')}
+  </div>`;
+}
+
+function renderViewProfile(){
+  const u = USERS[PROFILE_TARGET];
+  if(!u) return `${sectionBanner('Profile')}<div class="card"><div class="empty">This classmate could not be found.</div></div>`;
+  const theirPosts = POSTS.filter(p => p.author === PROFILE_TARGET).sort((a,b)=>b.timestamp-a.timestamp);
+  const status = connectionStatus(PROFILE_TARGET);
+  let actionBtn = '';
+  if(status==='self') actionBtn = '';
+  else if(status==='connected') actionBtn = `<button class="roster-btn" data-action="message" data-user="${PROFILE_TARGET}" style="margin-top:10px;">Message</button>`;
+  else if(status==='incoming') actionBtn = `<button class="roster-btn accept" data-action="accept" data-user="${PROFILE_TARGET}" style="margin-top:10px;">Accept request</button>`;
+  else if(status==='pending') actionBtn = `<span class="roster-btn pending" style="margin-top:10px;">Requested</span>`;
+  else actionBtn = `<button class="roster-btn" data-action="connect" data-user="${PROFILE_TARGET}" style="margin-top:10px;">Connect</button>`;
+  return `
+  ${sectionBanner(u.name)}
+  <div class="card me-card">
+    <div class="pin"></div>
+    ${avatarHtml(PROFILE_TARGET, 64)}
+    <div class="me-name">${escapeHtml(u.name)}</div>
+    <div class="me-bio">${escapeHtml(u.bio||'')}</div>
+    ${actionBtn}
+  </div>
+  <div class="roster-title" style="margin:16px 0 10px;">Posts (${theirPosts.length})</div>
+  <div id="posts-list">
+    ${theirPosts.length===0 ? `<div class="empty">No posts yet.</div>` : theirPosts.map(renderPost).join('')}
   </div>`;
 }
 
@@ -435,7 +521,11 @@ function attachAppEvents(){
   const editLink = document.getElementById('edit-profile-link');
   if(editLink) editLink.onclick = () => { VIEW='profile'; render(); };
 
-  if(VIEW==='feed'){
+  document.querySelectorAll('[data-action="view-profile"]').forEach(el => el.onclick = () => {
+    PROFILE_TARGET = el.dataset.user; VIEW = 'viewProfile'; render();
+  });
+
+  if(VIEW==='feed' || VIEW==='viewProfile'){
     const imgInput = document.getElementById('post-image');
     if(imgInput) imgInput.onchange = e => {
       if(e.target.files[0]){
@@ -479,15 +569,57 @@ function attachAppEvents(){
       const input = document.querySelector(`[data-comment-input="${b.dataset.id}"]`);
       const text = input.value.trim();
       if(!text) return;
-      try{ await api(`/api/posts/${b.dataset.id}/comments`, { method:'POST', body:{ text } }); await loadAppData(); render(); }
+      const replyTo = (replyContext && replyContext.postId===b.dataset.id) ? replyContext.commentId : null;
+      try{
+        await api(`/api/posts/${b.dataset.id}/comments`, { method:'POST', body:{ text, replyTo } });
+        replyContext = null;
+        await loadAppData(); render();
+      }
       catch(e){ showToast(e.message); }
     });
     document.querySelectorAll('[data-comment-input]').forEach(inp => inp.onkeydown = e => {
       if(e.key==='Enter'){ document.querySelector(`[data-action="comment"][data-id="${inp.dataset.commentInput}"]`).click(); }
     });
+
+    document.querySelectorAll('[data-action="reply-comment"]').forEach(b => b.onclick = () => {
+      replyContext = { postId: b.dataset.post, commentId: b.dataset.comment, authorName: b.dataset.author };
+      render();
+      const input = document.querySelector(`[data-comment-input="${b.dataset.post}"]`);
+      if(input) input.focus();
+    });
+    document.querySelectorAll('[data-action="cancel-reply"]').forEach(el => el.onclick = () => { replyContext = null; render(); });
+
+    document.querySelectorAll('[data-action="edit-post"]').forEach(b => b.onclick = () => {
+      EDITING_POST_ID = b.dataset.id; EDIT_REMOVE_IMAGE = false; EDIT_REMOVE_VIDEO = false; render();
+    });
+    document.querySelectorAll('[data-action="cancel-edit"]').forEach(b => b.onclick = () => { EDITING_POST_ID = null; render(); });
+    document.querySelectorAll('[data-action="mark-remove-image"]').forEach(b => b.onclick = () => { EDIT_REMOVE_IMAGE = true; render(); });
+    document.querySelectorAll('[data-action="mark-remove-video"]').forEach(b => b.onclick = () => { EDIT_REMOVE_VIDEO = true; render(); });
+    document.querySelectorAll('[data-action="save-edit"]').forEach(b => b.onclick = async () => {
+      const content = document.getElementById('edit-post-text').value.trim();
+      try{
+        await api(`/api/posts/${b.dataset.id}`, { method:'PUT', body:{ content, removeImage: EDIT_REMOVE_IMAGE, removeVideo: EDIT_REMOVE_VIDEO } });
+        EDITING_POST_ID = null;
+        await loadAppData(); render();
+      }catch(e){ showToast(e.message); }
+    });
+    document.querySelectorAll('[data-action="delete-post"]').forEach(b => b.onclick = async () => {
+      if(!confirm('Delete this post? This cannot be undone.')) return;
+      try{ await api(`/api/posts/${b.dataset.id}`, { method:'DELETE' }); await loadAppData(); render(); }
+      catch(e){ showToast(e.message); }
+    });
   }
 
-  if(VIEW==='friends'){
+  if(VIEW==='gallery'){
+    document.querySelectorAll('[data-action="delete-media"]').forEach(b => b.onclick = async () => {
+      if(!confirm('Remove this ' + (b.dataset.type==='image'?'photo':'video') + '?')) return;
+      const body = b.dataset.type==='image' ? { removeImage:true } : { removeVideo:true };
+      try{ await api(`/api/posts/${b.dataset.post}`, { method:'PUT', body }); await loadAppData(); render(); }
+      catch(e){ showToast(e.message); }
+    });
+  }
+
+  if(VIEW==='friends' || VIEW==='viewProfile'){
     document.querySelectorAll('[data-action="message"]').forEach(b => b.onclick = async () => {
       VIEW = 'inbox';
       await openThread(b.dataset.user);
@@ -519,7 +651,7 @@ function attachAppEvents(){
     }
   }
 
-  if(VIEW==='classmates'){
+  if(VIEW==='classmates' || VIEW==='viewProfile'){
     document.querySelectorAll('[data-action="connect"]').forEach(b => b.onclick = async () => {
       try{ await api(`/api/connections/${b.dataset.user}/request`, { method:'POST' }); await loadAppData(); render(); }
       catch(e){ showToast(e.message); }
