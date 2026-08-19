@@ -158,6 +158,31 @@ app.post('/api/posts', requireAuth, upload.fields([{ name: 'image', maxCount: 1 
   res.json({ ...post, authorInfo: publicUser(req.user) });
 }));
 
+app.put('/api/posts/:id', requireAuth, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const post = db.posts.find(p => p.id === req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  if (post.author !== req.user.username) return res.status(403).json({ error: 'You can only edit your own posts.' });
+  if (typeof req.body.content === 'string') post.content = req.body.content.trim();
+  if (req.body.removeImage === true) post.image = null;
+  if (req.body.removeVideo === true) post.video = null;
+  if (!post.content && !post.image && !post.video && !post.videoUrl) {
+    return res.status(400).json({ error: 'A post needs at least text, a photo, or a video.' });
+  }
+  await writeDb(db);
+  res.json({ ...post, authorInfo: publicUser(req.user) });
+}));
+
+app.delete('/api/posts/:id', requireAuth, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const idx = db.posts.findIndex(p => p.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Post not found.' });
+  if (db.posts[idx].author !== req.user.username) return res.status(403).json({ error: 'You can only delete your own posts.' });
+  db.posts.splice(idx, 1);
+  await writeDb(db);
+  res.json({ ok: true });
+}));
+
 app.post('/api/posts/:id/like', requireAuth, asyncRoute(async (req, res) => {
   const db = req.db;
   const post = db.posts.find(p => p.id === req.params.id);
@@ -174,7 +199,11 @@ app.post('/api/posts/:id/comments', requireAuth, asyncRoute(async (req, res) => 
   const db = req.db;
   const post = db.posts.find(p => p.id === req.params.id);
   if (!post) return res.status(404).json({ error: 'Post not found.' });
-  const comment = { author: req.user.username, text, timestamp: Date.now() };
+  const replyTo = req.body.replyTo || null;
+  if (replyTo && !post.comments.some(c => c.id === replyTo)) {
+    return res.status(400).json({ error: 'The comment you are replying to no longer exists.' });
+  }
+  const comment = { id: Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), author: req.user.username, text, timestamp: Date.now(), replyTo };
   post.comments.push(comment);
   await writeDb(db);
   res.json({ comment, authorInfo: publicUser(req.user) });
