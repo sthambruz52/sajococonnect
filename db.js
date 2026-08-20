@@ -33,7 +33,7 @@ async function readDb() {
   data.posts = data.posts.map(p => ({
     ...p,
     likes: p.likes || [],
-    comments: (p.comments || []).map((c, i) => ({ id: `legacy-${i}`, replyTo: null, ...c }))
+    comments: (p.comments || []).map((c, i) => ({ id: `legacy-${i}`, replyTo: null, likes: [], quoteAuthor: null, quoteText: null, ...c }))
   }));
   return data;
 }
