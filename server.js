@@ -200,13 +200,34 @@ app.post('/api/posts/:id/comments', requireAuth, asyncRoute(async (req, res) => 
   const post = db.posts.find(p => p.id === req.params.id);
   if (!post) return res.status(404).json({ error: 'Post not found.' });
   const replyTo = req.body.replyTo || null;
-  if (replyTo && !post.comments.some(c => c.id === replyTo)) {
-    return res.status(400).json({ error: 'The comment you are replying to no longer exists.' });
+  let quoteAuthor = null, quoteText = null;
+  if (replyTo) {
+    const parent = post.comments.find(c => c.id === replyTo);
+    if (!parent) return res.status(400).json({ error: 'The comment you are replying to no longer exists.' });
+    quoteAuthor = parent.author;
+    quoteText = parent.text.length > 60 ? parent.text.slice(0, 60) + '…' : parent.text;
   }
-  const comment = { id: Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), author: req.user.username, text, timestamp: Date.now(), replyTo };
+  const comment = {
+    id: Date.now().toString(36) + crypto.randomBytes(3).toString('hex'),
+    author: req.user.username, text, timestamp: Date.now(),
+    replyTo, quoteAuthor, quoteText, likes: []
+  };
   post.comments.push(comment);
   await writeDb(db);
   res.json({ comment, authorInfo: publicUser(req.user) });
+}));
+
+app.post('/api/posts/:postId/comments/:commentId/like', requireAuth, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const post = db.posts.find(p => p.id === req.params.postId);
+  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  const comment = post.comments.find(c => c.id === req.params.commentId);
+  if (!comment) return res.status(404).json({ error: 'Comment not found.' });
+  if (!comment.likes) comment.likes = [];
+  const i = comment.likes.indexOf(req.user.username);
+  if (i >= 0) comment.likes.splice(i, 1); else comment.likes.push(req.user.username);
+  await writeDb(db);
+  res.json({ likes: comment.likes });
 }));
 
 // ---------- connections ----------
