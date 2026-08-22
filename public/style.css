@@ -165,6 +165,29 @@ a{color:var(--teal);}
 .bubble.mine{align-self:flex-end;background:var(--teal);color:#12211c;border-bottom-right-radius:4px;}
 .bubble-time{font-size:10px;opacity:0.7;margin-top:3px;}
 
+.post-head{justify-content:space-between;}
+.post-owner-actions{display:flex;gap:8px;}
+.post-owner-actions button{background:transparent;color:var(--ink-dim);font-size:13px;padding:4px;border-radius:6px;}
+.post-owner-actions button:hover{color:var(--ink);background:var(--paper-3);}
+.edit-post-textarea{width:100%;min-height:70px;resize:vertical;background:var(--paper-3);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:10px 12px;font-size:14px;margin-top:10px;}
+.media-remove-wrap{position:relative;margin-top:8px;}
+.media-remove-wrap img, .media-remove-wrap video{width:100%;border-radius:8px;max-height:220px;object-fit:cover;}
+.media-remove-btn{position:absolute;top:8px;right:8px;background:rgba(18,28,24,0.85);color:var(--ink);font-size:11px;padding:5px 10px;border-radius:14px;}
+
+.comment-reply{margin-left:26px;border-left:2px solid var(--line);padding-left:10px;}
+.comment-actions{display:flex;gap:14px;margin-top:4px;}
+.comment-quote{font-size:11px;color:var(--ink-dim);border-left:2px solid var(--line);padding-left:8px;margin-bottom:4px;font-style:italic;}
+.reply-link{background:transparent;color:var(--ink-dim);font-size:11px;padding:0;display:flex;align-items:center;gap:4px;}
+.reply-link:hover{color:var(--teal);}
+.reply-link.liked{color:var(--coral);font-weight:600;}
+.reply-indicator{font-size:12px;color:var(--teal);margin-top:8px;display:flex;justify-content:space-between;}
+.reply-indicator span{cursor:pointer;color:var(--ink-dim);}
+.reply-indicator span:hover{color:var(--coral);}
+
+.gallery-tile-wrap{position:relative;}
+.gallery-delete{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:rgba(18,28,24,0.85);color:var(--ink);font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.gallery-delete:hover{background:var(--coral);}
+
 :root{
   --banner-img: url("https://res.cloudinary.com/tatfep5k/image/upload/v1786894559/sajoco-banner.jpg");
   --crest-img: url("https://res.cloudinary.com/tatfep5k/image/upload/v1786894559/sajoco-crest.jpg");
