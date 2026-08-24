@@ -26,7 +26,10 @@ const ICONS = {
   friends: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
   classmates: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg>`,
   inbox: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>`,
-  edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
+  edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
+  heart: `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.1 1.6 6.6 4.6 5.1c2.2-1.1 4.6-.3 6 1.5l1.4 1.8 1.4-1.8c1.4-1.8 3.8-2.6 6-1.5 3 1.5 3.6 5 1.9 7.8C18.7 16.65 12 21 12 21z"/></svg>`,
+  reply: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>`
 };
 
 function sectionBanner(title){
@@ -242,8 +245,8 @@ function renderPost(p){
       </div>
       ${mine ? `
         <div class="post-owner-actions">
-          <button data-action="edit-post" data-id="${p.id}" title="Edit">${ICONS.edit}</button>
-          <button data-action="delete-post" data-id="${p.id}" title="Delete">✕</button>
+          <button class="icon-action-btn" data-action="edit-post" data-id="${p.id}" title="Edit">${ICONS.edit}</button>
+          <button class="icon-action-btn danger" data-action="delete-post" data-id="${p.id}" title="Delete">${ICONS.trash}</button>
         </div>` : ''}
     </div>
     ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
@@ -275,14 +278,14 @@ function renderCommentThread(p){
     const name = escapeHtml((USERS[c.author]&&USERS[c.author].name)||c.author);
     const liked = (c.likes||[]).includes(ME.username);
     const parent = c.replyTo ? findComment(c.replyTo) : null;
-    const quote = parent ? `<div class="comment-quote">↳ replying to <b>${escapeHtml((USERS[parent.author]&&USERS[parent.author].name)||parent.author)}</b>: "${escapeHtml((parent.text||'').slice(0,60))}${(parent.text||'').length>60?'…':''}"</div>` : '';
+    const quote = parent ? `<div class="comment-quote">${ICONS.reply} replying to <b>${escapeHtml((USERS[parent.author]&&USERS[parent.author].name)||parent.author)}</b>: "${escapeHtml((parent.text||'').slice(0,60))}${(parent.text||'').length>60?'…':''}"</div>` : '';
     return `
     <div class="comment${isReply?' comment-reply':''}">
       ${quote}
       <div><b>${name}</b> ${escapeHtml(c.text)}</div>
       <div class="comment-actions">
-        <button class="reply-link ${liked?'liked':''}" data-action="like-comment" data-post="${p.id}" data-comment="${c.id}">♥ ${(c.likes||[]).length||''} ${liked?'Liked':'Like'}</button>
-        <button class="reply-link" data-action="reply-comment" data-post="${p.id}" data-comment="${c.id}" data-author="${name}">Reply</button>
+        <button class="comment-chip ${liked?'liked':''}" data-action="like-comment" data-post="${p.id}" data-comment="${c.id}">${ICONS.heart} ${(c.likes||[]).length||''}</button>
+        <button class="comment-chip" data-action="reply-comment" data-post="${p.id}" data-comment="${c.id}" data-author="${name}">${ICONS.reply} Reply</button>
       </div>
     </div>
     ${repliesOf(c.id).map(r => renderOne(r, true)).join('')}`;
@@ -380,7 +383,7 @@ function renderGallery(){
             <a class="gallery-tile" href="${m.src}" target="_blank" rel="noopener" title="${escapeHtml((USERS[m.author]&&USERS[m.author].name)||m.author)} · ${timeAgo(m.timestamp)}">
               ${m.type==='image' ? `<img src="${m.src}">` : `<video src="${m.src}"></video><span class="gallery-play">▶</span>`}
             </a>
-            ${m.author===ME.username ? `<button class="gallery-delete" data-action="delete-media" data-post="${m.postId}" data-type="${m.type}" title="Delete">✕</button>` : ''}
+            ${m.author===ME.username ? `<button class="gallery-delete" data-action="delete-media" data-post="${m.postId}" data-type="${m.type}" title="Delete">${ICONS.trash}</button>` : ''}
           </div>`).join('')}
       </div>
     `}
