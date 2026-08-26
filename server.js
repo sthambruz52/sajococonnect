@@ -17,6 +17,8 @@ if (!process.env.JWT_SECRET) {
 
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET;
+const ADMIN_USERNAMES = (process.env.ADMIN_USERNAMES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+function isAdminUser(username) { return ADMIN_USERNAMES.includes(username); }
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -53,7 +55,7 @@ async function uploadToCloudinary(buffer, mimetype) {
 // ---------- helpers ----------
 function publicUser(u) {
   if (!u) return null;
-  return { username: u.username, name: u.name, bio: u.bio || '', avatar: u.avatar || null, createdAt: u.createdAt };
+  return { username: u.username, name: u.name, bio: u.bio || '', avatar: u.avatar || null, createdAt: u.createdAt, isAdmin: isAdminUser(u.username) };
 }
 function signToken(username) {
   return jwt.sign({ username }, JWT_SECRET, { expiresIn: '60d' });
@@ -79,6 +81,10 @@ function asyncRoute(fn) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Something went wrong.' });
   });
+}
+function requireAdmin(req, res, next) {
+  if (!isAdminUser(req.user.username)) return res.status(403).json({ error: 'Admin access required.' });
+  next();
 }
 
 // ---------- auth ----------
@@ -309,6 +315,69 @@ app.post('/api/messages/:username', requireAuth, asyncRoute(async (req, res) => 
   db.messages.push(message);
   await writeDb(db);
   res.json(message);
+}));
+
+// ---------- admin ----------
+app.get('/api/admin/dashboard', requireAuth, requireAdmin, (req, res) => {
+  const db = req.db;
+  const users = Object.values(db.users).map(publicUser);
+  const commentCount = db.posts.reduce((sum, p) => sum + (p.comments ? p.comments.length : 0), 0);
+  const posts = [...db.posts].sort((a, b) => b.timestamp - a.timestamp).map(p => ({
+    ...p,
+    authorInfo: publicUser(db.users[p.author])
+  }));
+  res.json({
+    userCount: users.length,
+    postCount: db.posts.length,
+    commentCount,
+    messageCount: db.messages.length,
+    users,
+    posts
+  });
+});
+
+app.delete('/api/admin/users/:username', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const target = req.params.username;
+  if (!db.users[target]) return res.status(404).json({ error: 'User not found.' });
+  if (isAdminUser(target)) return res.status(400).json({ error: 'Cannot remove an admin account.' });
+  delete db.users[target];
+  db.posts = db.posts.filter(p => p.author !== target);
+  db.posts.forEach(p => {
+    p.likes = (p.likes || []).filter(u => u !== target);
+    p.comments = (p.comments || []).filter(c => c.author !== target);
+  });
+  db.connections.edges = db.connections.edges.filter(e => !e.includes(target));
+  db.connections.requests = db.connections.requests.filter(r => r.from !== target && r.to !== target);
+  db.messages = db.messages.filter(m => m.from !== target && m.to !== target);
+  await writeDb(db);
+  res.json({ ok: true });
+}));
+
+app.delete('/api/admin/posts/:id', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const idx = db.posts.findIndex(p => p.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Post not found.' });
+  db.posts.splice(idx, 1);
+  await writeDb(db);
+  res.json({ ok: true });
+}));
+
+app.delete('/api/admin/posts/:postId/comments/:commentId', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const db = req.db;
+  const post = db.posts.find(p => p.id === req.params.postId);
+  if (!post) return res.status(404).json({ error: 'Post not found.' });
+  const toRemove = new Set([req.params.commentId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    post.comments.forEach(c => {
+      if (c.replyTo && toRemove.has(c.replyTo) && !toRemove.has(c.id)) { toRemove.add(c.id); changed = true; }
+    });
+  }
+  post.comments = post.comments.filter(c => !toRemove.has(c.id));
+  await writeDb(db);
+  res.json({ ok: true });
 }));
 
 // multer / general error handler
