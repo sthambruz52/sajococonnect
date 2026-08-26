@@ -13,6 +13,7 @@ let EDITING_POST_ID = null;
 let EDIT_REMOVE_IMAGE = false;
 let EDIT_REMOVE_VIDEO = false;
 let replyContext = null; // { postId, commentId, authorName }
+let ADMIN_DATA = null;
 let authTab = 'login';
 let authError = '';
 let pendingAvatarFile = null;
@@ -29,7 +30,8 @@ const ICONS = {
   edit: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   heart: `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.1 1.6 6.6 4.6 5.1c2.2-1.1 4.6-.3 6 1.5l1.4 1.8 1.4-1.8c1.4-1.8 3.8-2.6 6-1.5 3 1.5 3.6 5 1.9 7.8C18.7 16.65 12 21 12 21z"/></svg>`,
-  reply: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>`
+  reply: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>`,
+  shield: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
 };
 
 function sectionBanner(title){
@@ -166,11 +168,12 @@ function renderApp(){
         <button class="nav-btn ${VIEW==='friends'?'active':''}" data-view="friends">${ICONS.friends}<span>Friends</span></button>
         <button class="nav-btn ${VIEW==='classmates'?'active':''}" data-view="classmates">${ICONS.classmates}<span>Classmates</span></button>
         <button class="nav-btn ${VIEW==='inbox'?'active':''}" data-view="inbox">${ICONS.inbox}<span>Inbox</span>${unreadTotal()?` <span class="nav-badge">${unreadTotal()}</span>`:''}</button>
+        ${ME.isAdmin ? `<button class="nav-btn ${VIEW==='admin'?'active':''}" data-view="admin">${ICONS.shield}<span>Admin</span></button>` : ''}
         ${VIEW==='profile' ? `<button class="nav-btn active" data-view="profile">${ICONS.edit}<span>Edit profile</span></button>`:''}
       </div>
     </div>
     <div class="side-main">
-      ${VIEW==='feed' ? renderFeed() : VIEW==='gallery' ? renderGallery() : VIEW==='classmates' ? renderRoster() : VIEW==='friends' ? renderFriends() : VIEW==='inbox' ? renderInbox() : VIEW==='viewProfile' ? renderViewProfile() : renderEditProfile()}
+      ${VIEW==='feed' ? renderFeed() : VIEW==='gallery' ? renderGallery() : VIEW==='classmates' ? renderRoster() : VIEW==='friends' ? renderFriends() : VIEW==='inbox' ? renderInbox() : VIEW==='viewProfile' ? renderViewProfile() : VIEW==='admin' ? renderAdmin() : renderEditProfile()}
     </div>
     <div class="side-right">
       ${renderRosterMini()}
@@ -247,7 +250,10 @@ function renderPost(p){
         <div class="post-owner-actions">
           <button class="icon-action-btn" data-action="edit-post" data-id="${p.id}" title="Edit">${ICONS.edit}</button>
           <button class="icon-action-btn danger" data-action="delete-post" data-id="${p.id}" title="Delete">${ICONS.trash}</button>
-        </div>` : ''}
+        </div>` : (ME.isAdmin ? `
+        <div class="post-owner-actions">
+          <button class="icon-action-btn danger" data-action="admin-delete-post" data-id="${p.id}" title="Delete (admin)">${ICONS.trash}</button>
+        </div>` : '')}
     </div>
     ${p.content ? `<div class="post-body">${escapeHtml(p.content)}</div>` : ''}
     <div class="post-media">
@@ -286,6 +292,7 @@ function renderCommentThread(p){
       <div class="comment-actions">
         <button class="comment-chip ${liked?'liked':''}" data-action="like-comment" data-post="${p.id}" data-comment="${c.id}">${ICONS.heart} ${(c.likes||[]).length||''}</button>
         <button class="comment-chip" data-action="reply-comment" data-post="${p.id}" data-comment="${c.id}" data-author="${name}">${ICONS.reply} Reply</button>
+        ${ME.isAdmin ? `<button class="comment-chip danger" data-action="admin-delete-comment" data-post="${p.id}" data-comment="${c.id}" title="Delete (admin)">${ICONS.trash}</button>` : ''}
       </div>
     </div>
     ${repliesOf(c.id).map(r => renderOne(r, true)).join('')}`;
@@ -437,6 +444,49 @@ function renderViewProfile(){
   </div>`;
 }
 
+function renderAdmin(){
+  if(!ADMIN_DATA) return `${sectionBanner('Admin')}<div class="card"><div class="empty">Loading…</div></div>`;
+  const { userCount, postCount, commentCount, messageCount, users, posts } = ADMIN_DATA;
+  return `
+  ${sectionBanner('Admin')}
+  <div class="card">
+    <div class="pin"></div>
+    <div class="roster-title">Overview</div>
+    <div class="admin-stats">
+      <div class="admin-stat"><b>${userCount}</b><span>Members</span></div>
+      <div class="admin-stat"><b>${postCount}</b><span>Posts</span></div>
+      <div class="admin-stat"><b>${commentCount}</b><span>Comments</span></div>
+      <div class="admin-stat"><b>${messageCount}</b><span>Messages</span></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="pin"></div>
+    <div class="roster-title">Members (${users.length})</div>
+    ${users.map(u => `
+      <div class="roster-item">
+        ${avatarHtml(u.username,32)}
+        <div style="flex:1;">
+          <div class="roster-name">${escapeHtml(u.name)}${u.isAdmin ? '<span class="admin-badge">Admin</span>' : ''}</div>
+          <div class="post-time mono">@${escapeHtml(u.username)}</div>
+        </div>
+        ${!u.isAdmin ? `<button class="icon-action-btn danger" data-action="admin-remove-user" data-user="${u.username}" title="Remove">${ICONS.trash}</button>` : ''}
+      </div>`).join('')}
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="pin"></div>
+    <div class="roster-title">All posts (${posts.length})</div>
+    ${posts.length===0 ? `<div class="empty">No posts yet.</div>` : posts.map(p => `
+      <div class="roster-item">
+        ${avatarHtml(p.author,32)}
+        <div style="flex:1;">
+          <div class="roster-name">${escapeHtml((p.authorInfo&&p.authorInfo.name)||p.author)}</div>
+          <div class="post-time mono">${escapeHtml((p.content||'(no text)').slice(0,50))}${(p.content||'').length>50?'…':''} · ${timeAgo(p.timestamp)}</div>
+        </div>
+        <button class="icon-action-btn danger" data-action="admin-delete-post" data-id="${p.id}" title="Delete">${ICONS.trash}</button>
+      </div>`).join('')}
+  </div>`;
+}
+
 function renderInbox(){
   if(INBOX_THREAD){
     const other = USERS[INBOX_THREAD];
@@ -528,12 +578,45 @@ function attachAuthEvents(){
 
 function attachAppEvents(){
   document.getElementById('logout-btn').onclick = () => { TOKEN=null; ME=null; localStorage.removeItem('rc_token'); VIEW='feed'; render(); };
-  document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { VIEW = b.dataset.view; render(); });
+
+  document.querySelectorAll('[data-view]').forEach(b => b.onclick = async () => {
+    VIEW = b.dataset.view;
+    if(VIEW==='admin'){
+      try{ ADMIN_DATA = await api('/api/admin/dashboard'); }
+      catch(e){ showToast(e.message); }
+    }
+    render();
+  });
+
   const editLink = document.getElementById('edit-profile-link');
   if(editLink) editLink.onclick = () => { VIEW='profile'; render(); };
 
   document.querySelectorAll('[data-action="view-profile"]').forEach(el => el.onclick = () => {
     PROFILE_TARGET = el.dataset.user; VIEW = 'viewProfile'; render();
+  });
+
+  document.querySelectorAll('[data-action="admin-delete-post"]').forEach(b => b.onclick = async () => {
+    if(!confirm('Delete this post as admin? This cannot be undone.')) return;
+    try{
+      await api(`/api/admin/posts/${b.dataset.id}`, { method:'DELETE' });
+      if(VIEW==='admin') ADMIN_DATA = await api('/api/admin/dashboard');
+      await loadAppData(); render();
+    }catch(e){ showToast(e.message); }
+  });
+  document.querySelectorAll('[data-action="admin-delete-comment"]').forEach(b => b.onclick = async () => {
+    if(!confirm('Delete this comment as admin?')) return;
+    try{
+      await api(`/api/admin/posts/${b.dataset.post}/comments/${b.dataset.comment}`, { method:'DELETE' });
+      await loadAppData(); render();
+    }catch(e){ showToast(e.message); }
+  });
+  document.querySelectorAll('[data-action="admin-remove-user"]').forEach(b => b.onclick = async () => {
+    if(!confirm(`Remove ${b.dataset.user} completely? This deletes their account and all their posts. This cannot be undone.`)) return;
+    try{
+      await api(`/api/admin/users/${b.dataset.user}`, { method:'DELETE' });
+      ADMIN_DATA = await api('/api/admin/dashboard');
+      await loadAppData(); render();
+    }catch(e){ showToast(e.message); }
   });
 
   if(VIEW==='feed' || VIEW==='viewProfile'){
