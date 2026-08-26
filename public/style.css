@@ -242,3 +242,8 @@ a{color:var(--teal);}
 }
 .brand-title{font-family:'Caveat',cursive;font-weight:700;color:var(--ink);margin:0;line-height:1;}
 .brand-rule{width:70px;height:3px;background:var(--yellow);margin:10px auto 0;border-radius:2px;}
+.admin-stats{display:grid;grid-template-columns:repeat(auto-fit, minmax(90px, 1fr));gap:10px;}
+.admin-stat{background:var(--paper-3);border-radius:8px;padding:12px 8px;text-align:center;}
+.admin-stat b{display:block;font-size:22px;color:var(--yellow);font-family:'IBM Plex Mono', monospace;}
+.admin-stat span{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:0.05em;}
+.admin-badge{background:var(--yellow);color:#1D2E28;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;}
