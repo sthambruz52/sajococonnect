@@ -247,3 +247,4 @@ a{color:var(--teal);}
 .admin-stat b{display:block;font-size:22px;color:var(--yellow);font-family:'IBM Plex Mono', monospace;}
 .admin-stat span{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:0.05em;}
 .admin-badge{background:var(--yellow);color:#1D2E28;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;}
+.app-footer{text-align:center;color:var(--ink-dim);font-size:11px;padding:18px 0 24px;opacity:0.65;letter-spacing:0.02em;}
